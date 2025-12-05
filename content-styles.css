@@ -1,0 +1,553 @@
+/* Discord Chat Exporter - Content Script Styles */
+
+/* Selection mode cursor */
+.discord-exporter-selecting {
+  cursor: crosshair !important;
+}
+
+.discord-exporter-selecting * {
+  cursor: crosshair !important;
+}
+
+/* Selected START message highlight */
+.discord-exporter-selected,
+.discord-exporter-selected-start {
+  position: relative;
+  background: rgba(87, 242, 135, 0.1) !important;
+}
+
+.discord-exporter-selected::before,
+.discord-exporter-selected-start::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #57f287;
+  border-radius: 0 2px 2px 0;
+}
+
+.discord-exporter-selected::after,
+.discord-exporter-selected-start::after {
+  content: '🟢 START';
+  position: absolute;
+  left: 8px;
+  top: -20px;
+  background: #57f287;
+  color: #1e1f22;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  z-index: 1000;
+  white-space: nowrap;
+}
+
+/* Selected END message highlight */
+.discord-exporter-selected-end {
+  position: relative;
+  background: rgba(237, 66, 69, 0.1) !important;
+}
+
+.discord-exporter-selected-end::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #ed4245;
+  border-radius: 0 2px 2px 0;
+}
+
+.discord-exporter-selected-end::after {
+  content: '🔴 END';
+  position: absolute;
+  left: 8px;
+  top: -20px;
+  background: #ed4245;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  z-index: 1000;
+  white-space: nowrap;
+}
+
+/* Right-click context menu target highlight */
+.discord-exporter-context-target {
+  position: relative;
+  background: rgba(88, 101, 242, 0.15) !important;
+  transition: background 0.3s ease;
+}
+
+.discord-exporter-context-target::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #5865f2;
+  border-radius: 0 2px 2px 0;
+  animation: pulse-border 1s ease-in-out;
+}
+
+@keyframes pulse-border {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Selection mode notification */
+.discord-exporter-selecting::before {
+  content: 'Click on a message to select (ESC to cancel)';
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #5865f2;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 100000;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  animation: slideDown 0.3s ease;
+}
+
+.discord-exporter-selecting[data-selection-type="start"]::before {
+  content: '🟢 Click to set START point (ESC to cancel)';
+  background: #248046;
+}
+
+.discord-exporter-selecting[data-selection-type="end"]::before {
+  content: '🔴 Click to set END point (ESC to cancel)';
+  background: #da373c;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* Export progress overlay */
+.discord-exporter-progress-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100000;
+}
+
+.discord-exporter-progress-modal {
+  background: #36393f;
+  padding: 24px 32px;
+  border-radius: 8px;
+  text-align: center;
+  color: #dcddde;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.discord-exporter-progress-modal h3 {
+  margin-bottom: 16px;
+  color: #fff;
+}
+
+.discord-exporter-progress-bar-container {
+  width: 300px;
+  height: 8px;
+  background: #202225;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.discord-exporter-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #5865f2, #7289da);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.discord-exporter-progress-text {
+  font-size: 14px;
+  color: #b9bbbe;
+}
+
+/* 自定義右鍵選單樣式 */
+.discord-exporter-context-menu {
+  position: fixed;
+  background: #18191c;
+  border-radius: 4px;
+  padding: 6px 8px;
+  min-width: 188px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
+  z-index: 100001;
+  font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.discord-exporter-context-menu-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  margin: 2px 0;
+  border-radius: 2px;
+  color: #b5bac1;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.discord-exporter-context-menu-item:hover {
+  background: #4752c4;
+  color: #fff;
+}
+
+.discord-exporter-context-menu-item svg {
+  margin-right: 8px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.discord-exporter-context-menu-separator {
+  height: 1px;
+  background: #3f4147;
+  margin: 4px 0;
+}
+
+.discord-exporter-context-menu-label {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  color: #949ba4;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* 右鍵點擊目標高亮 */
+.discord-exporter-context-target {
+  background: rgba(88, 101, 242, 0.15) !important;
+}
+
+/* 浮動右鍵選單 */
+#discord-exporter-floating-menu {
+  position: fixed;
+  background: #18191c;
+  border-radius: 4px;
+  padding: 8px;
+  min-width: 200px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
+  z-index: 100001;
+  font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  display: none;
+}
+
+.discord-exporter-menu-title {
+  color: #b5bac1;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+}
+
+.discord-exporter-menu-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  margin: 2px 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: #b5bac1;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.discord-exporter-menu-btn:hover {
+  background: #4752c4;
+  color: #fff;
+}
+
+.discord-exporter-menu-btn-clear {
+  color: #949ba4;
+  font-size: 13px;
+}
+
+.discord-exporter-menu-btn-clear:hover {
+  background: #3f4147;
+  color: #fff;
+}
+
+.discord-exporter-menu-btn-export {
+  color: #57f287;
+}
+
+.discord-exporter-menu-btn-export:hover {
+  background: #248046;
+  color: #fff;
+}
+
+/* ============================================================================
+   EXPORT BUTTON & PANEL
+   ============================================================================ */
+
+/* Export button in toolbar (Undiscord style) */
+#discord-exporter-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 16px;
+  color: #b5bac1;
+  cursor: pointer;
+  transition: color 0.15s ease;
+  border-radius: 4px;
+}
+
+#discord-exporter-btn:hover {
+  color: #fff;
+}
+
+#discord-exporter-btn:focus {
+  outline: none;
+}
+
+#discord-exporter-btn svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
+/* Progress bar inside button */
+#discord-exporter-btn progress {
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+#discord-exporter-btn progress::-webkit-progress-bar {
+  background: #3f4147;
+  border-radius: 2px;
+}
+
+#discord-exporter-btn progress::-webkit-progress-value {
+  background: linear-gradient(90deg, #5865f2, #57f287);
+  border-radius: 2px;
+}
+
+#discord-exporter-btn progress::-moz-progress-bar {
+  background: linear-gradient(90deg, #5865f2, #57f287);
+  border-radius: 2px;
+}
+
+#discord-exporter-btn.exporting {
+  pointer-events: none;
+  color: #5865f2;
+}
+
+#discord-exporter-btn.exporting progress {
+  opacity: 1;
+}
+
+#discord-exporter-btn.exporting svg {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Export Panel */
+#discord-exporter-panel {
+  position: fixed;
+  top: 60px;
+  right: 20px;
+  width: 320px;
+  background: #2b2d31;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 999999;
+  font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  display: none;
+  overflow: hidden;
+}
+
+#discord-exporter-panel.visible {
+  display: block;
+  animation: panelSlideIn 0.2s ease;
+}
+
+@keyframes panelSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.exporter-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #1e1f22;
+  border-bottom: 1px solid #3f4147;
+}
+
+.exporter-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.exporter-panel-close {
+  background: none;
+  border: none;
+  color: #b5bac1;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.exporter-panel-close:hover {
+  background: #3f4147;
+  color: #fff;
+}
+
+.exporter-panel-body {
+  padding: 12px 16px;
+}
+
+.exporter-section {
+  margin-bottom: 12px;
+}
+
+.exporter-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #949ba4;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.exporter-selection-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.exporter-selection-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.exporter-label {
+  font-size: 12px;
+  color: #b5bac1;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.exporter-value {
+  font-size: 13px;
+  color: #949ba4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.exporter-value.has-selection {
+  color: #fff;
+}
+
+.exporter-btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.exporter-btn-select {
+  background: #4752c4;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.exporter-btn-select:hover {
+  background: #5865f2;
+}
+
+.exporter-btn-clear {
+  width: 100%;
+  background: #3f4147;
+  color: #b5bac1;
+  margin-top: 4px;
+}
+
+.exporter-btn-clear:hover {
+  background: #4f545c;
+  color: #fff;
+}
+
+.exporter-divider {
+  border: none;
+  border-top: 1px solid #3f4147;
+  margin: 12px 0;
+}
+
+.exporter-export-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.exporter-btn-export {
+  flex: 1;
+  background: #248046;
+  color: #fff;
+  padding: 10px 12px;
+}
+
+.exporter-btn-export:hover {
+  background: #1a6334;
+}

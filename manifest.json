@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Discord Chat Exporter",
+  "version": "1.0.0",
+  "description": "Export Discord web conversations to PDF or Markdown with images and avatars preserved",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "downloads",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://discord.com/*",
+    "https://cdn.discordapp.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://discord.com/*"],
+      "js": ["content.js"],
+      "css": ["content-styles.css"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["libs/*"],
+      "matches": ["https://discord.com/*"]
+    }
+  ]
+}

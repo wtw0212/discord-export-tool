@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Discord Chat Exporter</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>📥 Discord Exporter</h1>
+    
+    <div id="not-discord" class="warning hidden">
+      <p>⚠️ Please navigate to Discord web to use this extension.</p>
+    </div>
+
+    <div id="main-content">
+      <div class="status-section">
+        <div id="status" class="status">Ready to export</div>
+        <div id="progress-container" class="hidden">
+          <div class="progress-bar">
+            <div id="progress" class="progress-fill"></div>
+          </div>
+          <span id="progress-text">0%</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>1. Select Starting Point</h2>
+        <p class="hint">Click the button below, then click on the message where you want to start exporting.</p>
+        <button id="select-start" class="btn btn-primary">
+          🎯 Select Starting Message
+        </button>
+        <div id="selected-message" class="selected-info hidden">
+          <span class="label">Selected:</span>
+          <span id="selected-preview"></span>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>2. Export Options</h2>
+        <div class="options">
+          <label class="checkbox-label">
+            <input type="checkbox" id="include-images" checked>
+            <span>Include images</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="include-avatars" checked>
+            <span>Include avatars</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="include-timestamps" checked>
+            <span>Include timestamps</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="include-reactions" checked>
+            <span>Include reactions</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>3. Export Format</h2>
+        <div class="export-buttons">
+          <button id="export-pdf" class="btn btn-export">
+            📄 Export as PDF
+          </button>
+          <button id="export-md" class="btn btn-export">
+            📝 Export as Markdown
+          </button>
+        </div>
+      </div>
+
+      <div id="export-status" class="export-status hidden">
+        <div class="spinner"></div>
+        <span id="export-status-text">Scrolling and collecting messages...</span>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Tip: Right-click any message to set it as starting point</p>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
