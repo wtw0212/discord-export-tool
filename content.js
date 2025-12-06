@@ -21,6 +21,7 @@
 
     // Attachments
     messageImages: '[class*="imageWrapper"] img, [class*="embedImage"] img, [class*="mediaAttachment"] img',
+    messageStickers: '[class*="stickerAsset"], [class*="sticker_"] img, [class*="stickerNode"] img, img[class*="sticker"], [class*="stickerWrapper"] img, [class*="stickerContainer"] img, img[data-type="sticker"]',
     messageAttachments: '[class*="attachment"]',
     messageReactions: '[class*="reactions"]',
 
@@ -104,28 +105,80 @@
       return imageCache.get(url);
     }
 
+    // Try multiple fetch strategies
+    const fetchStrategies = [
+      // Strategy 1: Standard fetch with CORS
+      () => fetch(url, { mode: 'cors', credentials: 'include' }),
+      // Strategy 2: No-CORS fetch (may result in opaque response)
+      () => fetch(url, { mode: 'no-cors' }),
+      // Strategy 3: Simple fetch
+      () => fetch(url)
+    ];
+
+    for (const strategy of fetchStrategies) {
+      try {
+        const response = await strategy();
+        if (response.ok || response.type === 'opaque') {
+          const blob = await response.blob();
+          if (blob.size > 0) {
+            const base64 = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+
+            // Limit cache size
+            if (imageCache.size >= MAX_IMAGE_CACHE_SIZE) {
+              const firstKey = imageCache.keys().next().value;
+              imageCache.delete(firstKey);
+            }
+
+            imageCache.set(url, base64);
+            return base64;
+          }
+        }
+      } catch (e) {
+        // Try next strategy
+      }
+    }
+
+    // Fallback: Use Image element to load (works for most images on same page)
     try {
-      const response = await fetch(url);
-      const blob = await response.blob();
       const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          try {
+            resolve(canvas.toDataURL('image/png'));
+          } catch (e) {
+            reject(e);
+          }
+        };
+        img.onerror = reject;
+        // Add timestamp to bypass cache issues
+        img.src = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
       });
 
-      // Limit cache size to prevent memory issues
-      if (imageCache.size >= MAX_IMAGE_CACHE_SIZE) {
-        const firstKey = imageCache.keys().next().value;
-        imageCache.delete(firstKey);
+      if (base64) {
+        if (imageCache.size >= MAX_IMAGE_CACHE_SIZE) {
+          const firstKey = imageCache.keys().next().value;
+          imageCache.delete(firstKey);
+        }
+        imageCache.set(url, base64);
+        return base64;
       }
-
-      imageCache.set(url, base64);
-      return base64;
-    } catch (error) {
-      console.error('Error caching image:', error);
-      return null;
+    } catch (e) {
+      // Image fallback also failed
     }
+
+    console.warn('Could not cache image:', url.substring(0, 100));
+    return null;
   }
 
   // --- STATE ---
@@ -262,14 +315,16 @@
     const ariaLabel = img.getAttribute('aria-label') || '';
     const dataType = img.getAttribute('data-type') || '';
 
+    // Never classify stickers as emoji
+    if (isSticker(img)) return false;
+
     return (
       src.includes('cdn.discordapp.com/emojis') ||
       src.includes('discord.com/assets') ||
       src.includes('twemoji') ||
       className.includes('emoji') ||
       dataType === 'emoji' ||
-      ariaLabel.startsWith(':') ||
-      (img.width && img.width <= 48 && img.height && img.height <= 48)
+      ariaLabel.startsWith(':')
     );
   }
 
@@ -298,34 +353,65 @@
   function isGifUrl(url) {
     if (!url) return false;
     const lowerUrl = url.toLowerCase();
-    return lowerUrl.includes('.gif') || lowerUrl.includes('format=gif');
+    return lowerUrl.includes('.gif') || lowerUrl.includes('format=gif') || lowerUrl.includes('/tenor.') || lowerUrl.includes('tenor.com');
+  }
+
+  function isSticker(img) {
+    const src = img.src || '';
+    const className = img.className || '';
+    const dataType = img.getAttribute('data-type') || '';
+    const parent = img.closest('[class*="sticker"]');
+    return (
+      dataType === 'sticker' ||
+      src.includes('cdn.discordapp.com/stickers') ||
+      src.includes('media.discordapp.net/stickers') ||
+      src.includes('/stickers/') ||
+      className.includes('sticker') ||
+      parent !== null
+    );
+  }
+
+  function isGifImage(img) {
+    const src = img.src || '';
+    const className = img.className || '';
+    const parent = img.closest('[class*="gif"]');
+    return (
+      isGifUrl(src) ||
+      className.toLowerCase().includes('gif') ||
+      parent !== null ||
+      src.includes('tenor.com') ||
+      src.includes('giphy.com')
+    );
   }
 
   function getStaticImageUrl(url) {
-    // Convert GIF URL to static image (first frame)
+    // For GIFs, we try to get a static preview or just return original
     if (!url) return url;
 
     try {
       const urlObj = new URL(url);
 
-      // For Discord CDN, we can request a static format
+      // For Discord CDN attachments - convert to media domain for public access
       if (url.includes('cdn.discordapp.com') || url.includes('media.discordapp.net')) {
-        // Change .gif to .png or add format parameter
-        if (urlObj.pathname.endsWith('.gif')) {
-          urlObj.pathname = urlObj.pathname.replace('.gif', '.png');
+        // Convert cdn to media domain
+        if (urlObj.hostname === 'cdn.discordapp.com') {
+          urlObj.hostname = 'media.discordapp.net';
         }
-        urlObj.searchParams.set('format', 'png');
+        // For GIFs, request webp format which Discord supports better
+        // Don't change the extension, just add format parameter
+        if (urlObj.pathname.toLowerCase().includes('.gif')) {
+          urlObj.searchParams.set('format', 'webp');
+        }
         return urlObj.toString();
       }
 
-      // For Tenor GIFs
-      if (url.includes('tenor.com')) {
-        // Tenor URLs often have a static thumbnail variant
-        return url.replace('.gif', '.png');
+      // For Tenor/GIPHY - keep original URL (they handle preview themselves)
+      if (url.includes('tenor.com') || url.includes('giphy.com')) {
+        return url;
       }
 
     } catch (e) {
-      console.error('Error converting GIF URL:', e);
+      // Keep original
     }
 
     return url; // Return original if conversion fails
@@ -566,16 +652,125 @@
   }
 
   function extractImages(messageEl, data) {
+    const processedUrls = new Set();
+
+    const addImage = (src) => {
+      if (!src) return;
+      // Normalize URL for deduplication
+      const normalizedSrc = src.split('?')[0];
+      if (processedUrls.has(normalizedSrc)) return;
+      processedUrls.add(normalizedSrc);
+
+      const isGif = isGifUrl(src);
+      data.images.push({
+        url: src,
+        isGif: isGif,
+        staticUrl: isGif ? getStaticImageUrl(src) : src
+      });
+    };
+
+    // Method 1: Standard img elements
     const imageEls = messageEl.querySelectorAll(SELECTORS.messageImages);
     imageEls.forEach(img => {
+      if (isSticker(img)) return;
+      if (isAvatarImage(img)) return;
+      if (isEmojiImage(img)) return;
       const src = getFullResolutionImageUrl(img);
-      if (src && !isAvatarImage(img) && !isEmojiImage(img)) {
-        const isGif = isGifUrl(src);
-        data.images.push({
-          url: src,
-          isGif: isGif,
-          staticUrl: isGif ? getStaticImageUrl(src) : src
-        });
+      if (src) addImage(src);
+    });
+
+    // Method 2: Anchor elements with data-role="img" (used for some GIFs)
+    const anchorImages = messageEl.querySelectorAll('a[data-role="img"], a[data-safe-src], a[class*="originalLink"]');
+    anchorImages.forEach(anchor => {
+      if (anchor.closest('[class*="repliedMessage"]')) return;
+      if (anchor.closest('[class*="replyBar"]')) return;
+
+      // Get URL from href or data-safe-src
+      const href = anchor.getAttribute('href') || '';
+      const safeSrc = anchor.getAttribute('data-safe-src') || '';
+
+      // Check if href contains image file extensions (before query params)
+      const isImageUrl = (url) => {
+        try {
+          const pathname = new URL(url).pathname.toLowerCase();
+          return pathname.endsWith('.gif') || pathname.endsWith('.png') ||
+            pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') ||
+            pathname.endsWith('.webp');
+        } catch {
+          // Fallback to simple check
+          const urlLower = url.toLowerCase();
+          return urlLower.includes('.gif') || urlLower.includes('.png') ||
+            urlLower.includes('.jpg') || urlLower.includes('.webp');
+        }
+      };
+
+      let src = '';
+      if (href && isImageUrl(href)) {
+        src = href;
+      } else if (safeSrc) {
+        src = safeSrc;
+      }
+
+      if (src) addImage(src);
+    });
+  }
+
+  function extractStickers(messageEl, data) {
+    const processedUrls = new Set();
+
+    const addSticker = (img) => {
+      const src = getFullResolutionImageUrl(img) || img.src;
+      if (!src) return;
+      if (processedUrls.has(src)) return;
+      processedUrls.add(src);
+
+      const isAnimated = src.includes('.json') || src.includes('apng') || src.includes('format=lottie');
+
+      // Keep original URL but ensure proper size
+      // Use media.discordapp.net instead of cdn.discordapp.com for better accessibility
+      let stickerUrl = src;
+      if (src.includes('/stickers/')) {
+        try {
+          const urlObj = new URL(src);
+          // Convert cdn to media domain for public access
+          if (urlObj.hostname === 'cdn.discordapp.com') {
+            urlObj.hostname = 'media.discordapp.net';
+          }
+          // Set size parameter
+          urlObj.searchParams.set('size', '320');
+          // Keep quality parameter if exists
+          if (!urlObj.searchParams.has('quality')) {
+            urlObj.searchParams.set('quality', 'lossless');
+          }
+          stickerUrl = urlObj.toString();
+        } catch (e) {
+          // Keep original URL
+        }
+      }
+
+      data.stickers.push({
+        url: stickerUrl,
+        isAnimated: isAnimated,
+        staticUrl: isAnimated ? stickerUrl.replace('.json', '.png').replace('format=lottie', 'format=png') : stickerUrl
+      });
+    };
+
+    // Method 1: Use CSS selectors
+    const stickerEls = messageEl.querySelectorAll(SELECTORS.messageStickers);
+    stickerEls.forEach(el => {
+      const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+      if (img) addSticker(img);
+    });
+
+    // Method 2: Fallback - scan all images and check with isSticker
+    const allImgs = messageEl.querySelectorAll('img');
+    allImgs.forEach(img => {
+      if (img.closest('[class*=\"repliedMessage\"]')) return;
+      if (img.closest('[class*=\"replyBar\"]')) return;
+      if (isEmojiImage(img)) return;
+      if (isAvatarImage(img)) return;
+      if (isSticker(img)) {
+        addSticker(img);
       }
     });
   }
@@ -703,7 +898,8 @@
   function findUsernameFromPreviousMessages(messageEl) {
     let prevEl = messageEl.previousElementSibling;
     let attempts = 0;
-    while (prevEl && attempts < 10) {
+    // Increased from 10 to 50 to handle very long message chains
+    while (prevEl && attempts < 50) {
       if (prevEl.matches?.(SELECTORS.message)) {
         const usernameEl = findUsernameElement(prevEl);
         if (usernameEl?.textContent?.trim()) {
@@ -731,6 +927,7 @@
       content: '',
       contentText: '',
       images: [],
+      stickers: [],
       attachments: [],
       reactions: [],
       embeds: [],
@@ -781,11 +978,14 @@
     }
 
     extractContent(messageEl, data);
-    if (options.includeImages) extractImages(messageEl, data);
+    if (options.includeImages) {
+      extractImages(messageEl, data);
+      extractStickers(messageEl, data);
+    }
     extractEmbeds(messageEl, data, options);
     if (options.includeReactions) extractReactions(messageEl, data);
 
-    if (!data.content && !data.images.length && !data.embeds.length && !data.username) {
+    if (!data.content && !data.images.length && !data.stickers.length && !data.embeds.length && !data.username) {
       return null;
     }
 
@@ -1046,6 +1246,11 @@
       .embed-thumbnail { float: right; max-width: 60px; max-height: 60px; border-radius: 4px; margin-left: 8px; }
       .embed-image { max-width: 100%; max-height: 200px; border-radius: 4px; margin-top: 4px; }
       .embed-footer { font-size: 11px; color: #949ba4; margin-top: 4px; }
+      .stickers { margin-top: 4px; }
+      .stickers img, .sticker { max-width: 160px; max-height: 160px; border-radius: 4px; margin: 2px 2px 2px 0; display: block; }
+      .sticker-container { position: relative; display: inline-block; margin: 2px 2px 2px 0; }
+      .animated-sticker { border: 2px solid #eb459e; border-radius: 6px; padding: 2px; background: #2b2d31; }
+      .sticker-badge { position: absolute; top: 6px; left: 6px; background: #eb459e; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
     `;
   }
 
@@ -1059,10 +1264,16 @@
       messages.forEach(msg => msg.avatar && imageUrls.add(msg.avatar));
     }
     if (options.includeImages) {
-      messages.forEach(msg => msg.images?.forEach(img => {
-        const url = typeof img === 'object' ? img.staticUrl : img;
-        if (url) imageUrls.add(url);
-      }));
+      messages.forEach(msg => {
+        msg.images?.forEach(img => {
+          const url = typeof img === 'object' ? img.staticUrl : img;
+          if (url) imageUrls.add(url);
+        });
+        msg.stickers?.forEach(sticker => {
+          const url = typeof sticker === 'object' ? sticker.staticUrl : sticker;
+          if (url) imageUrls.add(url);
+        });
+      });
     }
     messages.forEach(msg => msg.embeds?.forEach(e => {
       if (e.thumbnail) imageUrls.add(e.thumbnail);
@@ -1129,6 +1340,30 @@
         imagesHtml = imgParts.join('');
       }
 
+      // Stickers (cached)
+      let stickersHtml = '';
+      if (options.includeImages && msg.stickers?.length > 0) {
+        const stickerParts = ['<div class="stickers">'];
+        for (const stickerData of msg.stickers) {
+          const stickerUrl = typeof stickerData === 'string' ? stickerData : stickerData.url;
+          const staticUrl = typeof stickerData === 'object' ? stickerData.staticUrl : stickerUrl;
+          const isAnimated = typeof stickerData === 'object' && stickerData.isAnimated;
+          const base64 = imageCache.get(staticUrl);
+          if (base64) {
+            if (isAnimated) {
+              stickerParts.push(`<div class="sticker-container animated-sticker"><img src="${base64}" alt="Sticker"><span class="sticker-badge">Animated</span></div>`);
+            } else {
+              stickerParts.push(`<img class="sticker" src="${base64}" alt="Sticker">`);
+            }
+          } else if (stickerUrl) {
+            // Fallback: use URL directly
+            stickerParts.push(`<img class="sticker" src="${stickerUrl}" alt="Sticker">`);
+          }
+        }
+        stickerParts.push('</div>');
+        stickersHtml = stickerParts.join('');
+      }
+
       // Embeds (cached)
       let embedsHtml = '';
       if (msg.embeds?.length > 0) {
@@ -1180,7 +1415,7 @@
       const headerHtml = showHeader
         ? `<div class="message-header"><span class="username" ${usernameStyle}>${escapeHtml(msg.username || 'Unknown')}</span>${timestampHtml}</div>` : '';
 
-      htmlParts.push(`<div class="message">${avatarHtml}<div class="message-body">${replyHtml}${headerHtml}<div class="content">${msg.content || ''}</div>${imagesHtml}${embedsHtml}${reactionsHtml}</div></div>`);
+      htmlParts.push(`<div class="message">${avatarHtml}<div class="message-body">${replyHtml}${headerHtml}<div class="content">${msg.content || ''}</div>${imagesHtml}${stickersHtml}${embedsHtml}${reactionsHtml}</div></div>`);
       lastUsername = msg.username || '';
 
       if (i > 0 && i % BATCH_SIZE === 0) {
@@ -1228,16 +1463,27 @@
       // Images
       if (options.includeImages && msg.images.length > 0) {
         msg.images.forEach(imgData => {
-          // Handle both old format (string) and new format (object)
           if (typeof imgData === 'string') {
             md += `![image](${imgData})\n\n`;
           } else if (imgData.isGif) {
             md += `🎬 **GIF**\n\n`;
-            md += `[![GIF預覽](${imgData.staticUrl})](${imgData.url})\n\n`;
-            md += `> 原始連結: ${imgData.url}\n\n`;
+            md += `[![GIF Preview](${imgData.staticUrl})](${imgData.url})\n\n`;
+            md += `> Link: ${imgData.url}\n\n`;
           } else {
             md += `![image](${imgData.url})\n\n`;
           }
+        });
+      }
+
+      // Stickers
+      if (options.includeImages && msg.stickers?.length > 0) {
+        msg.stickers.forEach(stickerData => {
+          const url = typeof stickerData === 'string' ? stickerData : stickerData.url;
+          const isAnimated = typeof stickerData === 'object' && stickerData.isAnimated;
+          if (isAnimated) {
+            md += `🎭 **Animated Sticker**\n\n`;
+          }
+          md += `![sticker](${url})\n\n`;
         });
       }
 
