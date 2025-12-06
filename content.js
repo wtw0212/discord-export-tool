@@ -279,6 +279,23 @@
     return src.includes('/avatars/') || img.className.includes('avatar');
   }
 
+  function isAvatarDecoration(img) {
+    const src = img.src || '';
+    const className = img.className || '';
+    // Check for avatar decoration URLs and classes
+    return (
+      src.includes('avatar-decoration') ||
+      src.includes('avatar_decoration') ||
+      src.includes('/avatar-decorations/') ||
+      src.includes('/avatar-decoration-presets/') ||
+      className.includes('avatarDecoration') ||
+      className.includes('avatar-decoration') ||
+      className.includes('decoration') ||
+      img.closest('[class*="avatarDecoration"]') !== null ||
+      img.closest('[class*="decoration"]') !== null
+    );
+  }
+
   function isGifUrl(url) {
     if (!url) return false;
     const lowerUrl = url.toLowerCase();
@@ -451,7 +468,8 @@
 
     const allAvatarEls = messageEl.querySelectorAll(SELECTORS.messageAvatar);
     for (const el of allAvatarEls) {
-      if (!el.closest('[class*="repliedMessage"]') && !el.closest('[class*="replyBar"]')) {
+      // Skip avatar decorations and reply-related avatars
+      if (!el.closest('[class*="repliedMessage"]') && !el.closest('[class*="replyBar"]') && !isAvatarDecoration(el)) {
         avatarEl = el;
         break;
       }
@@ -460,9 +478,11 @@
     if (!avatarEl) {
       const avatarWrappers = messageEl.querySelectorAll('[class*="avatar"]');
       for (const wrapper of avatarWrappers) {
+        // Skip decoration wrappers
+        if (wrapper.className && (wrapper.className.includes('decoration') || wrapper.className.includes('Decoration'))) continue;
         if (!wrapper.closest('[class*="repliedMessage"]') && !wrapper.closest('[class*="replyBar"]')) {
           const img = wrapper.querySelector('img');
-          if (img) {
+          if (img && !isAvatarDecoration(img)) {
             avatarEl = img;
             break;
           }
@@ -474,6 +494,8 @@
       const allImgs = messageEl.querySelectorAll('img');
       for (const img of allImgs) {
         if (img.closest('[class*="repliedMessage"]') || img.closest('[class*="replyBar"]')) continue;
+        // Skip avatar decorations
+        if (isAvatarDecoration(img)) continue;
         const src = img.src || '';
         if (src.includes('cdn.discordapp.com/avatars') ||
           src.includes('discord.com/avatars') ||
@@ -510,7 +532,8 @@
             // Try to find avatar in this previous message
             const prevAvatarEls = prevEl.querySelectorAll(SELECTORS.messageAvatar);
             for (const el of prevAvatarEls) {
-              if (!el.closest('[class*="repliedMessage"]') && !el.closest('[class*="replyBar"]') && el.src) {
+              // Skip avatar decorations
+              if (!el.closest('[class*="repliedMessage"]') && !el.closest('[class*="replyBar"]') && el.src && !isAvatarDecoration(el)) {
                 let avatarUrl = el.src;
                 if (avatarUrl.includes('?size=')) {
                   avatarUrl = avatarUrl.replace(/\?size=\d+/, `?size=${CONFIG.avatarSize}`);
@@ -527,9 +550,11 @@
             if (!cachedAvatar) {
               const prevAvatarWrappers = prevEl.querySelectorAll('[class*="avatar"]');
               for (const wrapper of prevAvatarWrappers) {
+                // Skip decoration wrappers
+                if (wrapper.className && (wrapper.className.includes('decoration') || wrapper.className.includes('Decoration'))) continue;
                 if (!wrapper.closest('[class*="repliedMessage"]') && !wrapper.closest('[class*="replyBar"]')) {
                   const img = wrapper.querySelector('img');
-                  if (img && img.src) {
+                  if (img && img.src && !isAvatarDecoration(img)) {
                     let avatarUrl = img.src;
                     if (avatarUrl.includes('?size=')) {
                       avatarUrl = avatarUrl.replace(/\?size=\d+/, `?size=${CONFIG.avatarSize}`);
