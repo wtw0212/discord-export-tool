@@ -1,5 +1,4 @@
 // Content script for Discord Chat Exporter
-// Refactored modular version - All code bundled for Chrome Extension compatibility
 
 (function () {
   'use strict';
@@ -2022,5 +2021,5 @@
   // Initial injection
   setTimeout(injectExportButton, 1000);
 
-  console.log('Discord Chat Exporter content script loaded (refactored version)');
+  console.log('Discord Chat Exporter content script loaded');
 })();
