@@ -425,37 +425,86 @@
     return result;
   }
 
-  // --- MESSAGE EXTRACTION ---
+  function isValidUsernameElement(el) {
+    if (!el?.textContent?.trim()) return false;
+    if (el.closest('[class*="repliedMessage"]')) return false;
+    if (el.closest('[class*="replyBar"]')) return false;
+    return true;
+  }
 
   function findUsernameElement(messageEl) {
-    // Try header first (most common case)
     const headerEl = messageEl.querySelector('[class*="header"]:not([class*="repliedMessage"] *)');
     if (headerEl) {
       const el = headerEl.querySelector('[class*="username"]');
-      if (el && el.textContent.trim()) return el;
+      if (el?.textContent?.trim()) return el;
     }
 
-    // Try all username elements
-    const allUsernameEls = messageEl.querySelectorAll(SELECTORS.messageUsername);
-    for (const el of allUsernameEls) {
-      if (!el.closest('[class*="repliedMessage"]') && !el.closest('[class*="replyBar"]') && el.textContent.trim()) {
-        return el;
+    const selectors = [
+      SELECTORS.messageUsername,
+      '[class*="headerText"] [class*="username"]',
+      '[class*="username"]'
+    ];
+
+    for (const selector of selectors) {
+      const elements = messageEl.querySelectorAll(selector);
+      for (const el of elements) {
+        if (isValidUsernameElement(el)) return el;
       }
     }
 
-    // Try headerText username
-    const headerTextEls = messageEl.querySelectorAll('[class*="headerText"] [class*="username"]');
-    for (const el of headerTextEls) {
-      if (!el.closest('[class*="repliedMessage"]') && el.textContent.trim()) {
-        return el;
-      }
+    return null;
+  }
+
+  function normalizeAvatarUrl(url) {
+    if (!url) return '';
+    if (url.includes('?size=')) {
+      return url.replace(/\?size=\d+/, `?size=${CONFIG.avatarSize}`);
+    }
+    if (!url.includes('?')) {
+      return url + `?size=${CONFIG.avatarSize}`;
+    }
+    return url;
+  }
+
+  function isValidAvatarElement(el) {
+    if (!el || !el.src) return false;
+    if (el.closest('[class*="repliedMessage"]')) return false;
+    if (el.closest('[class*="replyBar"]')) return false;
+    if (isAvatarDecoration(el)) return false;
+    return true;
+  }
+
+  function isDecorationWrapper(wrapper) {
+    const className = wrapper.className || '';
+    return className.includes('decoration') || className.includes('Decoration');
+  }
+
+  function findAvatarInElement(container) {
+    const avatarEls = container.querySelectorAll(SELECTORS.messageAvatar);
+    for (const el of avatarEls) {
+      if (isValidAvatarElement(el)) return el;
     }
 
-    // Try any element with class containing 'username' as last resort
-    const anyUsernameEls = messageEl.querySelectorAll('[class*="username"]');
-    for (const el of anyUsernameEls) {
-      if (!el.closest('[class*="repliedMessage"]') && !el.closest('[class*="replyBar"]') && el.textContent.trim()) {
-        return el;
+    const wrappers = container.querySelectorAll('[class*="avatar"]');
+    for (const wrapper of wrappers) {
+      if (isDecorationWrapper(wrapper)) continue;
+      if (wrapper.closest('[class*="repliedMessage"]')) continue;
+      if (wrapper.closest('[class*="replyBar"]')) continue;
+      const img = wrapper.querySelector('img');
+      if (img && !isAvatarDecoration(img)) return img;
+    }
+
+    const allImgs = container.querySelectorAll('img');
+    for (const img of allImgs) {
+      if (img.closest('[class*="repliedMessage"]')) continue;
+      if (img.closest('[class*="replyBar"]')) continue;
+      if (isAvatarDecoration(img)) continue;
+      const src = img.src || '';
+      if (src.includes('cdn.discordapp.com/avatars') ||
+        src.includes('discord.com/avatars') ||
+        src.includes('/avatars/') ||
+        img.className.includes('avatar')) {
+        return img;
       }
     }
 
@@ -463,118 +512,39 @@
   }
 
   function extractAvatar(messageEl, data) {
-    let avatarEl = null;
+    const avatarEl = findAvatarInElement(messageEl);
 
-    const allAvatarEls = messageEl.querySelectorAll(SELECTORS.messageAvatar);
-    for (const el of allAvatarEls) {
-      // Skip avatar decorations and reply-related avatars
-      if (!el.closest('[class*="repliedMessage"]') && !el.closest('[class*="replyBar"]') && !isAvatarDecoration(el)) {
-        avatarEl = el;
-        break;
-      }
+    if (avatarEl?.src) {
+      const avatarUrl = normalizeAvatarUrl(avatarEl.src);
+      if (data.username) userCache.setAvatar(data.username, avatarUrl);
+      data.avatar = avatarUrl;
+      return;
     }
 
-    if (!avatarEl) {
-      const avatarWrappers = messageEl.querySelectorAll('[class*="avatar"]');
-      for (const wrapper of avatarWrappers) {
-        // Skip decoration wrappers
-        if (wrapper.className && (wrapper.className.includes('decoration') || wrapper.className.includes('Decoration'))) continue;
-        if (!wrapper.closest('[class*="repliedMessage"]') && !wrapper.closest('[class*="replyBar"]')) {
-          const img = wrapper.querySelector('img');
-          if (img && !isAvatarDecoration(img)) {
-            avatarEl = img;
-            break;
-          }
-        }
-      }
+    if (!data.username) return;
+
+    let cachedAvatar = userCache.getAvatar(data.username);
+    if (cachedAvatar) {
+      data.avatar = cachedAvatar;
+      return;
     }
 
-    if (!avatarEl) {
-      const allImgs = messageEl.querySelectorAll('img');
-      for (const img of allImgs) {
-        if (img.closest('[class*="repliedMessage"]') || img.closest('[class*="replyBar"]')) continue;
-        // Skip avatar decorations
-        if (isAvatarDecoration(img)) continue;
-        const src = img.src || '';
-        if (src.includes('cdn.discordapp.com/avatars') ||
-          src.includes('discord.com/avatars') ||
-          src.includes('/avatars/') ||
-          img.className.includes('avatar')) {
-          avatarEl = img;
+    let prevEl = messageEl.previousElementSibling;
+    let attempts = 0;
+    while (prevEl && attempts < 20 && !cachedAvatar) {
+      if (prevEl.matches?.(SELECTORS.message)) {
+        const prevAvatarEl = findAvatarInElement(prevEl);
+        if (prevAvatarEl?.src) {
+          cachedAvatar = normalizeAvatarUrl(prevAvatarEl.src);
+          userCache.setAvatar(data.username, cachedAvatar);
           break;
         }
       }
+      prevEl = prevEl.previousElementSibling;
+      attempts++;
     }
 
-    if (avatarEl && avatarEl.src) {
-      let foundAvatarUrl = avatarEl.src;
-      if (foundAvatarUrl.includes('?size=')) {
-        foundAvatarUrl = foundAvatarUrl.replace(/\?size=\d+/, `?size=${CONFIG.avatarSize}`);
-      } else if (!foundAvatarUrl.includes('?')) {
-        foundAvatarUrl += `?size=${CONFIG.avatarSize}`;
-      }
-
-      if (data.username) {
-        userCache.setAvatar(data.username, foundAvatarUrl);
-      }
-      data.avatar = foundAvatarUrl;
-    } else if (data.username) {
-      // First try cache
-      let cachedAvatar = userCache.getAvatar(data.username);
-
-      // If cache is empty, look for avatar in previous sibling messages
-      if (!cachedAvatar) {
-        let prevEl = messageEl.previousElementSibling;
-        let attempts = 0;
-        while (prevEl && attempts < 20 && !cachedAvatar) {
-          if (prevEl.matches && prevEl.matches(SELECTORS.message)) {
-            // Try to find avatar in this previous message
-            const prevAvatarEls = prevEl.querySelectorAll(SELECTORS.messageAvatar);
-            for (const el of prevAvatarEls) {
-              // Skip avatar decorations
-              if (!el.closest('[class*="repliedMessage"]') && !el.closest('[class*="replyBar"]') && el.src && !isAvatarDecoration(el)) {
-                let avatarUrl = el.src;
-                if (avatarUrl.includes('?size=')) {
-                  avatarUrl = avatarUrl.replace(/\?size=\d+/, `?size=${CONFIG.avatarSize}`);
-                } else if (!avatarUrl.includes('?')) {
-                  avatarUrl += `?size=${CONFIG.avatarSize}`;
-                }
-                cachedAvatar = avatarUrl;
-                userCache.setAvatar(data.username, cachedAvatar);
-                break;
-              }
-            }
-
-            // Also try avatar wrappers in previous message
-            if (!cachedAvatar) {
-              const prevAvatarWrappers = prevEl.querySelectorAll('[class*="avatar"]');
-              for (const wrapper of prevAvatarWrappers) {
-                // Skip decoration wrappers
-                if (wrapper.className && (wrapper.className.includes('decoration') || wrapper.className.includes('Decoration'))) continue;
-                if (!wrapper.closest('[class*="repliedMessage"]') && !wrapper.closest('[class*="replyBar"]')) {
-                  const img = wrapper.querySelector('img');
-                  if (img && img.src && !isAvatarDecoration(img)) {
-                    let avatarUrl = img.src;
-                    if (avatarUrl.includes('?size=')) {
-                      avatarUrl = avatarUrl.replace(/\?size=\d+/, `?size=${CONFIG.avatarSize}`);
-                    } else if (!avatarUrl.includes('?')) {
-                      avatarUrl += `?size=${CONFIG.avatarSize}`;
-                    }
-                    cachedAvatar = avatarUrl;
-                    userCache.setAvatar(data.username, cachedAvatar);
-                    break;
-                  }
-                }
-              }
-            }
-          }
-          prevEl = prevEl.previousElementSibling;
-          attempts++;
-        }
-      }
-
-      data.avatar = cachedAvatar || '';
-    }
+    data.avatar = cachedAvatar || '';
   }
 
   function extractContent(messageEl, data) {
@@ -721,6 +691,34 @@
     });
   }
 
+  function extractUsernameColor(el) {
+    if (!el) return '';
+    const color = window.getComputedStyle(el).color;
+    if (color && color !== 'rgb(255, 255, 255)' && color !== 'rgba(0, 0, 0, 0)') {
+      return color;
+    }
+    return '';
+  }
+
+  function findUsernameFromPreviousMessages(messageEl) {
+    let prevEl = messageEl.previousElementSibling;
+    let attempts = 0;
+    while (prevEl && attempts < 10) {
+      if (prevEl.matches?.(SELECTORS.message)) {
+        const usernameEl = findUsernameElement(prevEl);
+        if (usernameEl?.textContent?.trim()) {
+          return {
+            username: usernameEl.textContent.trim(),
+            color: extractUsernameColor(usernameEl)
+          };
+        }
+      }
+      prevEl = prevEl.previousElementSibling;
+      attempts++;
+    }
+    return null;
+  }
+
   function extractMessageData(messageEl, options) {
     if (!messageEl) return null;
 
@@ -739,48 +737,21 @@
       replyTo: null
     };
 
-    const repliedMessageEl = messageEl.querySelector(SELECTORS.repliedMessage);
     const usernameEl = findUsernameElement(messageEl);
-
     if (usernameEl) {
       data.username = usernameEl.textContent.trim();
-      const computedStyle = window.getComputedStyle(usernameEl);
-      const color = computedStyle.color;
-      if (color && color !== 'rgb(255, 255, 255)' && color !== 'rgba(0, 0, 0, 0)') {
-        data.usernameColor = color;
+      data.usernameColor = extractUsernameColor(usernameEl);
+    } else if (userCache.lastUsername) {
+      data.username = userCache.lastUsername;
+      data.usernameColor = userCache.getColor(data.username) || '';
+    } else {
+      const prevData = findUsernameFromPreviousMessages(messageEl);
+      if (prevData) {
+        data.username = prevData.username;
+        data.usernameColor = prevData.color;
       }
     }
 
-    // If no username found, try to find from previous message in DOM (consecutive messages)
-    if (!data.username) {
-      // First try cache
-      if (userCache.lastUsername) {
-        data.username = userCache.lastUsername;
-        data.usernameColor = userCache.getColor(data.username) || '';
-      } else {
-        // Try to find username from previous message elements in the DOM
-        let prevEl = messageEl.previousElementSibling;
-        let attempts = 0;
-        while (prevEl && attempts < 10 && !data.username) {
-          if (prevEl.matches && prevEl.matches(SELECTORS.message)) {
-            const prevUsernameEl = findUsernameElement(prevEl);
-            if (prevUsernameEl && prevUsernameEl.textContent.trim()) {
-              data.username = prevUsernameEl.textContent.trim();
-              const computedStyle = window.getComputedStyle(prevUsernameEl);
-              const color = computedStyle.color;
-              if (color && color !== 'rgb(255, 255, 255)' && color !== 'rgba(0, 0, 0, 0)') {
-                data.usernameColor = color;
-              }
-              break;
-            }
-          }
-          prevEl = prevEl.previousElementSibling;
-          attempts++;
-        }
-      }
-    }
-
-    // Update cache if we found a username
     if (data.username) {
       userCache.lastUsername = data.username;
       if (data.usernameColor) {
@@ -790,12 +761,13 @@
       }
     }
 
+    const repliedMessageEl = messageEl.querySelector(SELECTORS.repliedMessage);
     if (repliedMessageEl) {
       const replyUsername = repliedMessageEl.querySelector('[class*="username"]');
       const replyContent = repliedMessageEl.querySelector('[class*="repliedTextContent"]');
       data.replyTo = {
-        username: replyUsername ? replyUsername.textContent.trim() : '',
-        content: replyContent ? replyContent.textContent.trim() : ''
+        username: replyUsername?.textContent?.trim() || '',
+        content: replyContent?.textContent?.trim() || ''
       };
     }
 
